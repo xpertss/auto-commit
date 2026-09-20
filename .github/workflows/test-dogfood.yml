@@ -7,15 +7,40 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: 17 3 * * *
 jobs:
   dogfood:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
     steps:
-      - name: Dogfood scenario not configured
-        id: dogfood_scenario_not_configured
-        run: |-
-          echo "::error::this action has no dogfood scenario, so nothing exercises it end-to-end."
-          echo "Add dogfood: { scenario: [...], cleanup: [...] } to .projenrc.ts and run npx projen - see the @xpertss/projen-types README."
-          exit 1
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v7
+      - name: "Changed path: fixture"
+        id: changed_path_fixture
+        run: echo "$(date -u +%Y%m%dT%H%M%SZ)" >> test/fixtures/dogfood-state.txt
+      - name: "Changed path: run the action"
+        id: changed-path-0
+        uses: .
+        with:
+          commit_message: "test: dogfood"
+          branches: test/dogfood
+      - name: "Changed path: assert"
+        id: changed_path_assert
+        run: '[ "${{ steps.changed-path-0.outputs.committed }}" = "true" ]'
+      - name: "No-op path: run the action"
+        id: no-op-check
+        uses: .
+        with:
+          commit_message: "test: dogfood"
+          branches: test/dogfood
+      - name: "No-op path: assert"
+        id: no-op_path_assert
+        run: '[ "${{ steps.no-op-check.outputs.committed }}" = "false" ]'
+      - name: Cleanup
+        id: cleanup
+        if: always()
+        run: git push origin --delete test/dogfood || true

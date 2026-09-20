@@ -4,6 +4,7 @@ node_modules/
 !/.projen/tasks.json
 !/.projen/deps.json
 !/.projen/files.json
+/.idea/*
 !/.github/workflows/projen-drift-check.yml
 !/.github/workflows/workflow-change-notice.yml
 !/LICENSE
