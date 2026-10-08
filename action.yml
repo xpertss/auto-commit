@@ -1,0 +1,37 @@
+---
+name: Auto Commit
+description: >-
+  Stages a folder and, only if it changed, commits it and pushes the commit to
+  the given branches.
+inputs:
+  commit_message:
+    description: The commit message for the staged change.
+    required: true
+  folder:
+    description: >-
+      The folder to stage (`git add -A -- <folder>`). The default `.` stages
+      the whole tree.
+    default: '.'
+  branches:
+    description: >-
+      Space-separated branch names the commit is pushed to (each as
+      `HEAD:refs/heads/<branch>`). Defaults to the current branch; the action
+      fails when the checkout is detached and this input is empty.
+  commit_user_name:
+    description: Name recorded as the commit author and committer.
+    default: 'github-actions[bot]'
+  commit_user_email:
+    description: Email recorded as the commit author and committer.
+    default: '41898282+github-actions[bot]@users.noreply.github.com'
+outputs:
+  committed:
+    description: "'true' when a commit was created, 'false' when nothing was staged."
+  pushed:
+    description: "'true' when the commit was pushed, 'false' when nothing was staged."
+runs:
+  using: composite
+  steps:
+    - name: Commit and push
+      id: auto-commit
+      shell: bash
+      run: ${{ github.action_path }}/auto-commit.sh
