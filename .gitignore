@@ -5,6 +5,8 @@ node_modules/
 !/.projen/deps.json
 !/.projen/files.json
 /.idea/*
+/spec/
+!/.editorconfig
 !/.github/workflows/projen-drift-check.yml
 !/.github/workflows/workflow-change-notice.yml
 !/LICENSE
@@ -13,7 +15,6 @@ node_modules/
 !/.yamllint
 !/.github/workflows/build.yml
 !/.github/workflows/test-dogfood.yml
-!/.github/workflows/sonar.yml
 /dist/changelog.md
 /dist/version.txt
 !/.github/workflows/release.yml

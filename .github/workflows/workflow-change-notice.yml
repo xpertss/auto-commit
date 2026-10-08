@@ -6,11 +6,13 @@ on:
   pull_request_target: {}
 jobs:
   check:
+    name: Workflow change notice
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
       WATCH_PATHS: .github/workflows/** .github/actions/**
     steps:
       - name: Check for workflow/action changes

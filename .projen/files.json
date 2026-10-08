@@ -1,10 +1,10 @@
 {
   "files": [
+    ".editorconfig",
     ".gitattributes",
     ".github/workflows/build.yml",
     ".github/workflows/projen-drift-check.yml",
     ".github/workflows/release.yml",
-    ".github/workflows/sonar.yml",
     ".github/workflows/test-dogfood.yml",
     ".github/workflows/workflow-change-notice.yml",
     ".gitignore",

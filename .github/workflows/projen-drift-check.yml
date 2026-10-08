@@ -6,6 +6,7 @@ on:
   pull_request: {}
 jobs:
   check:
+    name: Projen drift check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,12 +26,17 @@ jobs:
           node-version: "24"
       - name: Install dependencies
         id: install_dependencies
-        run: npm ci
+        run: |-
+          if [ ! -f package-lock.json ]; then
+            echo "::error file=package.json::package-lock.json is not committed. Run npm install, commit package-lock.json, and push."
+            exit 1
+          fi
+          npm ci --ignore-scripts
       - name: Check for projen drift
         id: check_for_projen_drift
         run: |
           set -euo pipefail
-          npx projen
+          ./node_modules/.bin/projen
           drifted="$(git diff --name-only)"
           if [ -n "$drifted" ]; then
             while IFS= read -r f; do

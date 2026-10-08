@@ -4,7 +4,6 @@ import { GitHubActionProject } from '@xpertss/projen-types';
 const project = new GitHubActionProject({
   name: 'auto-commit',
   description: 'Stage a folder and, only if it changed, commit and push it',
-  sonarHostUrl: 'https://sonarcloud.io',       // required, no default - your SonarCloud URL
   dogfood: {
     // Two scenario steps: the "changed" path and the "no-op" path are both
     // load-bearing behavior for this action (a double-commit or a
