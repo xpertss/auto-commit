@@ -23,11 +23,25 @@ inputs:
   commit_user_email:
     description: Email recorded as the commit author and committer.
     default: '41898282+github-actions[bot]@users.noreply.github.com'
+  if_behind:
+    description: >-
+      What to do when a push is rejected because the target branch has moved on
+      (non-fast-forward). `fail` (default) fails the step, as today. `skip`
+      leaves that branch alone, reports pushed=false, and succeeds. Use `skip`
+      only for content that a later run on the newer branch will regenerate.
+    default: 'fail'
 outputs:
   committed:
     description: "'true' when a commit was created, 'false' when nothing was staged."
   pushed:
-    description: "'true' when the commit was pushed, 'false' when nothing was staged."
+    description: >-
+      'true' only when every target branch accepted the push; 'false' when
+      nothing was staged, or a push was skipped or rejected.
+  skipped_branches:
+    description: >-
+      Space-separated target branches whose push was skipped as
+      non-fast-forward (only with `if_behind: skip`). Empty when none were
+      skipped.
 runs:
   using: composite
   steps:

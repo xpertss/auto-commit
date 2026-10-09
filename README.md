@@ -27,6 +27,7 @@ runner image.
 | `branches` | no | current branch | Space-separated branch names; the one commit is pushed to **each** (`HEAD:refs/heads/<branch>`). When empty, the current branch is used and a detached checkout is a failure. |
 | `commit_user_name` | no | `github-actions[bot]` | Name recorded as the commit author and committer. |
 | `commit_user_email` | no | `41898282+github-actions[bot]@users.noreply.github.com` | Email recorded as the commit author and committer. |
+| `if_behind` | no | `fail` | What to do when a push is rejected because the target branch moved on (non-fast-forward). `fail` (default) fails the step, as before. `skip` leaves that branch alone, reports `pushed: false`, and succeeds. Use `skip` only for content a later run on the newer branch will regenerate (see "Generated content and racing pushes"). |
 
 Identity semantics: `commit_user_name`/`commit_user_email` affect commit
 metadata only (author **and** committer are set to the same identity via
@@ -39,7 +40,8 @@ same as with the original action.
 | Output | Meaning |
 |---|---|
 | `committed` | `true` when a commit was created, `false` when nothing was staged. |
-| `pushed` | `true` when the commit was pushed, `false` when nothing was staged. |
+| `pushed` | `true` only when **every** target branch accepted the push; `false` when nothing was staged, or a push was skipped or rejected. |
+| `skipped_branches` | Space-separated target branches whose push was skipped as non-fast-forward (only with `if_behind: skip`). Empty when none were skipped. |
 
 ## Required caller permissions
 
@@ -57,12 +59,37 @@ original action).
 
 - **One commit, N branches:** a single commit is pushed to every `branches`
   entry; all targets end at the same SHA.
-- **No force-push:** a target branch that moved on the remote is a visible
-  failure, never a clobber.
+- **No force-push:** a target branch that moved on the remote is never a
+  clobber. By default it is a visible failure; with `if_behind: skip` it is
+  left alone and reported instead (see "Generated content and racing pushes").
 - **The no-op path is load-bearing:** running the action twice in one job (as
   the dogfood does) must commit once and no-op the second time — a
   double-commit or push-when-empty bug is the failure mode this design
-  specifically guards against.
+   specifically guards against.
+
+## Generated content and racing pushes
+
+When a workflow commits **content derived from the tree** (a code index, a
+generated manifest, a sync of computed docs), a push that lands while another
+run is in flight can be rejected as non-fast-forward — the branch moved on
+between this run's checkout and its push. With the default `if_behind: fail`
+that shows up as a failed run on `main` after every burst of merges, even
+though the branch's final state is already correct (the newer run regenerates
+the content from a tree that includes everything).
+
+Use `if_behind: skip` **only** when both are true:
+
+- the committed content is **derived from the tree** (regenerated from whatever
+  is checked out), and
+- **every push that can move the branch also starts a run that regenerates it**
+  (e.g. `on: push` to that branch). Then a skipped push is always covered: the
+  newer commit triggers a run whose output reflects the newer tree.
+
+Do **not** use `skip` for hand-authored or one-off commits — nothing will
+regenerate those, and a skipped push silently loses the change. `skip` never
+changes what is pushed: it only turns a non-fast-forward rejection into a
+reported success. Every other push failure (auth, permissions, a protected
+branch, the network) still fails the step regardless of `if_behind`.
 
 ## Example
 
@@ -126,10 +153,12 @@ and the pinned `actionlint` release binary.
 
 | Endpoint | Direction | Auth | Triggered by |
 |---|---|---|---|
-| `https://github.com/{o}/{r}.git` | push | `actions/checkout` credential (via the `origin` URL) | `git push origin HEAD:refs/heads/<branch>` |
+| `https://github.com/{o}/{r}.git` | push | `actions/checkout` credential (via the `origin` URL) | `git push --porcelain origin HEAD:refs/heads/<branch>` |
 
 Nothing else. The action makes no other network call — no `gh`/REST API, no
-fetch (the caller's `actions/checkout` owns fetching).
+fetch (the caller's `actions/checkout` owns fetching). `if_behind` changes none
+of this: no new endpoint, no new env var, no token input; `--porcelain` only
+changes the local output format so a non-fast-forward rejection can be detected.
 
 ### Env vars read (complete)
 

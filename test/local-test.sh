@@ -13,6 +13,9 @@
 #   folder     - changes in and out of `folder`         -> only the folder
 #   stack      - second change after a first commit     -> second commit stacks
 #   identity   - custom commit_user_name/email          -> author overridden
+#   behind     - if_behind off (fail, default) vs on (skip): moved branch,
+#                unchanged branch, non-NFF rejection, two branches one moved,
+#                bogus value, and the no-op path
 #   plus       - validation failures (detached without branches, bad branch,
 #                empty branches)
 #
@@ -63,17 +66,38 @@ run_scenario() {
 }
 
 # Invoke the script with a given input set. Runs under a clean env list.
-# $1 = workdir, $2 = outputs file, $3 = stderr file, then extra INPUT_* args.
+# $1 = workdir, $2 = outputs file, $3 = combined output file, then INPUT_* args.
+# Combined stdout+stderr is captured into $3 so assertions can check notices,
+# error messages, and the push output (which the hard-failure path to stderr).
 run_action() {
   local work="$1" out="$2" err="$3"
   shift 3
   env GITHUB_WORKSPACE="$work" GITHUB_OUTPUT="$out" "$@" \
     INPUT_COMMIT_MESSAGE="test: dogfood" \
-    bash "$SCRIPT" 2> "$err"
+    bash "$SCRIPT" > "$err" 2>&1
 }
 
 remote_sha() { # <origin.git> <ref>
   git -C "$1" rev-parse -q --verify "refs/heads/$2" 2>/dev/null || true
+}
+
+# Advance the remote's <branch> past the current workdir HEAD by committing
+# <extra> on a throwaway clone and pushing it. Simulates another run merging
+# to the remote branch between this run's checkout and its push.
+# $1 = origin.git, $2 = branch, $3 = extra file written in the clone.
+advance_remote() {
+  local origin="$1" branch="$2" extra="$3" adv
+  adv="$TMP/adv-$(basename "$origin")"
+  git clone -q "$origin" "$adv"
+  (
+    cd "$adv"
+    git config user.name t; git config user.email t@example.com
+    git checkout -q "$branch"
+    echo "advance" > "$extra"
+    git add -A; git commit -qm "advance"
+    git push -q origin "HEAD:refs/heads/$branch"
+  )
+  rm -rf "$adv"
 }
 
 # --- scenario: changed (explicit target branch, detached checkout) ----------
@@ -166,6 +190,109 @@ rc=$?
 set -e
 assert_eq "exit 0" "0" "$rc"
 assert_eq "commit author overridden" "Jane Doe <jane@example.com>" "$(git -C "$WORK" log -1 --format='%an <%ae>')"
+
+# --- scenario: S1 off (fail, default) + branch moved on -----------------------
+note "S1: if_behind unset (fail), branch moved on -> hard failure, remote unchanged"
+run_scenario s1 fixture
+advance_remote "$TMP/origin-s1.git" main extra-s1.txt
+before_main="$(remote_sha "$TMP/origin-s1.git" main)"
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main"
+rc=$?
+set -e
+assert_eq "exit non-zero" "1" "$([[ $rc -ne 0 ]] && echo 1 || echo 0)"
+assert_eq "committed" "true" "$(get_out committed)"
+assert_eq "pushed" "false" "$(get_out pushed)"
+assert_eq "skipped_branches empty" "" "$(get_out skipped_branches)"
+assert_eq "remote main unchanged" "$before_main" "$(remote_sha "$TMP/origin-s1.git" main)"
+
+# --- scenario: S2 skip + branch moved on ---------------------------------------
+note "S2: if_behind=skip, branch moved on -> success, pushed=false, skipped=main"
+run_scenario s2 fixture
+advance_remote "$TMP/origin-s2.git" main extra-s2.txt
+before_main="$(remote_sha "$TMP/origin-s2.git" main)"
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main" INPUT_IF_BEHIND="skip"
+rc=$?
+set -e
+assert_eq "exit 0" "0" "$rc"
+assert_eq "committed" "true" "$(get_out committed)"
+assert_eq "pushed" "false" "$(get_out pushed)"
+assert_eq "skipped_branches" "main" "$(get_out skipped_branches)"
+assert_eq "remote main unchanged" "$before_main" "$(remote_sha "$TMP/origin-s2.git" main)"
+assert "logs a skip notice" "1" "$(grep -q 'moved on since checkout' "$ERR" && echo 1 || echo 0)"
+
+# --- scenario: S3 skip + branch not moved --------------------------------------
+note "S3: if_behind=skip, branch not moved -> normal push, pushed=true"
+run_scenario s3 fixture
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main" INPUT_IF_BEHIND="skip"
+rc=$?
+set -e
+assert_eq "exit 0" "0" "$rc"
+assert_eq "committed" "true" "$(get_out committed)"
+assert_eq "pushed" "true" "$(get_out pushed)"
+assert_eq "skipped_branches empty" "" "$(get_out skipped_branches)"
+assert_eq "main advanced to HEAD" "$(git -C "$WORK" rev-parse HEAD)" "$(remote_sha "$TMP/origin-s3.git" main)"
+
+# --- scenario: S4 skip + non-NFF rejection (remote-reject hook) ---------------
+note "S4: if_behind=skip, remote-reject hook -> hard failure ([remote rejected])"
+run_scenario s4 fixture
+cat > "$TMP/origin-s4.git/hooks/pre-receive" <<'HOOK'
+#!/usr/bin/env bash
+echo "denied by pre-receive" >&2
+exit 1
+HOOK
+chmod +x "$TMP/origin-s4.git/hooks/pre-receive"
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main" INPUT_IF_BEHIND="skip"
+rc=$?
+set -e
+assert_eq "exit non-zero" "1" "$([[ $rc -ne 0 ]] && echo 1 || echo 0)"
+assert_eq "committed" "true" "$(get_out committed)"
+assert_eq "pushed" "false" "$(get_out pushed)"
+assert_eq "skipped_branches empty" "" "$(get_out skipped_branches)"
+assert "reports [remote rejected]" "1" "$(grep -q 'remote rejected' "$ERR" && echo 1 || echo 0)"
+
+# --- scenario: S5 skip + two branches, one moved ------------------------------
+note "S5: if_behind=skip, two branches, main moved -> test/dogfood pushed, main skipped"
+run_scenario s5 fixture
+advance_remote "$TMP/origin-s5.git" main extra-s5.txt
+before_main="$(remote_sha "$TMP/origin-s5.git" main)"
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main test/dogfood" INPUT_IF_BEHIND="skip"
+rc=$?
+set -e
+assert_eq "exit 0" "0" "$rc"
+assert_eq "committed" "true" "$(get_out committed)"
+assert_eq "pushed" "false" "$(get_out pushed)"
+assert_eq "skipped_branches" "main" "$(get_out skipped_branches)"
+head_sha="$(git -C "$WORK" rev-parse HEAD)"
+assert_eq "test/dogfood pushed to HEAD" "$head_sha" "$(remote_sha "$TMP/origin-s5.git" test/dogfood)"
+assert_eq "main unchanged" "$before_main" "$(remote_sha "$TMP/origin-s5.git" main)"
+
+# --- scenario: S6 bogus if_behind (input validation) ---------------------------
+note "S6: if_behind=bogus -> input validation failure, nothing staged"
+run_scenario s6 fixture
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main" INPUT_IF_BEHIND="bogus"
+rc=$?
+set -e
+assert_eq "exit non-zero" "1" "$([[ $rc -ne 0 ]] && echo 1 || echo 0)"
+assert "reports if_behind error" "1" "$(grep -q "must be 'fail' or 'skip'" "$ERR" && echo 1 || echo 0)"
+assert "fixture still untracked (not staged)" "?? fixture.txt" "$(git -C "$WORK" status --porcelain)"
+
+# --- scenario: S7 no-op unchanged regardless of if_behind ----------------------
+note "S7: no-op path unchanged regardless of if_behind"
+run_scenario s7 none
+set +e
+run_action "$WORK" "$OUT" "$ERR" INPUT_BRANCHES="main" INPUT_IF_BEHIND="skip"
+rc=$?
+set -e
+assert_eq "exit 0" "0" "$rc"
+assert_eq "committed" "false" "$(get_out committed)"
+assert_eq "pushed" "false" "$(get_out pushed)"
+assert_eq "skipped_branches empty" "" "$(get_out skipped_branches)"
 
 # --- validation: detached HEAD without branches --------------------------------
 note "validation (detached HEAD, no branches input)"

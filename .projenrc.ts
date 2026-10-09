@@ -36,6 +36,42 @@ const project = new GitHubActionProject({
           '[ "${{ steps.no-op-check.outputs.committed }}" = "false" ]',
         ],
       },
+      {
+        // if_behind: skip - force a real non-fast-forward rejection by
+        // advancing test/dogfood independently (scratch clone) so this run's
+        // push is rejected, then verify the action skips it (succeeds) rather
+        // than failing. Also give this run a fresh change so it commits and
+        // actually attempts a push.
+        name: 'Skip path',
+        id: 'skip-path',
+        fixtureSteps: [
+          `set -euo pipefail
+adv="$(mktemp -d)"
+git clone -q "$(git remote get-url origin)" "$adv"
+(
+  cd "$adv"
+  git config user.name "dogfood-advance"
+  git config user.email "dogfood@example.com"
+  git checkout -q test/dogfood
+  echo "advance $(date -u +%s)" >> test/fixtures/dogfood-state.txt
+  git add -A
+  git commit -qm "dogfood: advance test/dogfood"
+  git push -q origin HEAD:refs/heads/test/dogfood
+)
+rm -rf "$adv"
+echo "skip $(date -u +%s)" >> test/fixtures/dogfood-skip.txt`,
+        ],
+        inputs: {
+          commit_message: 'test: dogfood',
+          branches: 'test/dogfood',
+          if_behind: 'skip',
+        },
+        assertions: [
+          '[ "${{ steps.skip-path.outputs.committed }}" = "true" ]',
+          '[ "${{ steps.skip-path.outputs.pushed }}" = "false" ]',
+          '[ "${{ steps.skip-path.outputs.skipped_branches }}" = "test/dogfood" ]',
+        ],
+      },
     ],
     cleanup: [
       'git push origin --delete test/dogfood || true',

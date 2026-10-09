@@ -44,6 +44,38 @@ jobs:
         run: |-
           set -euo pipefail
           [ "${{ steps.no-op-check.outputs.committed }}" = "false" ]
+      - name: "Skip path: fixture"
+        id: skip_path_fixture
+        run: |-
+          set -euo pipefail
+          adv="$(mktemp -d)"
+          git clone -q "$(git remote get-url origin)" "$adv"
+          (
+            cd "$adv"
+            git config user.name "dogfood-advance"
+            git config user.email "dogfood@example.com"
+            git checkout -q test/dogfood
+            echo "advance $(date -u +%s)" >> test/fixtures/dogfood-state.txt
+            git add -A
+            git commit -qm "dogfood: advance test/dogfood"
+            git push -q origin HEAD:refs/heads/test/dogfood
+          )
+          rm -rf "$adv"
+          echo "skip $(date -u +%s)" >> test/fixtures/dogfood-skip.txt
+      - name: "Skip path: run the action"
+        id: skip-path
+        uses: ./
+        with:
+          commit_message: "test: dogfood"
+          branches: test/dogfood
+          if_behind: skip
+      - name: "Skip path: assert"
+        id: skip_path_assert
+        run: |-
+          set -euo pipefail
+          [ "${{ steps.skip-path.outputs.committed }}" = "true" ]
+          [ "${{ steps.skip-path.outputs.pushed }}" = "false" ]
+          [ "${{ steps.skip-path.outputs.skipped_branches }}" = "test/dogfood" ]
       - name: Cleanup
         id: cleanup
         if: always()
