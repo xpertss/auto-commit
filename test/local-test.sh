@@ -3,7 +3,9 @@
 #
 # Simulates the action's runtime on a github.com runner using only local
 # tooling: a real git repo whose `origin` is a local bare repository and the
-# GITHUB_* / INPUT_* environment the composite action provides. It exercises:
+# GITHUB_* environment the runner provides. INPUT_* env vars are set here to
+# mirror the mapping in action.yml's env: block (which maps the inputs context
+# to INPUT_* names for the composite run: step). It exercises:
 #
 #   changed    - local changes, explicit target branch  -> commit, push
 #   no-op      - no local changes                       -> green no-op (no push)
@@ -36,6 +38,13 @@ assert() { assert_eq "$@"; }
 get_out()   { sed -n "s/^$1=//p" "$OUT" | head -n1; }
 
 DEFAULT_AUTHOR='github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+
+# --- static consistency: action.yml env: block covers all auto-commit.sh INPUT_* reads ---
+note "static consistency (action.yml env: block vs auto-commit.sh INPUT_* reads)"
+ACTION_YML="${REPO_ROOT}/action.yml"
+env_keys=$(grep -E '^\s+INPUT_[A-Z_]+:' "$ACTION_YML" | grep -oE 'INPUT_[A-Z_]+' | sort)
+script_reads=$(grep -oE 'INPUT_[A-Z_]+' "$SCRIPT" | sort -u)
+assert_eq "action.yml env: block provides exactly the INPUT_* vars auto-commit.sh reads" "$script_reads" "$env_keys"
 
 # --- git fixtures: a base bare origin with an initial `main` commit ----------
 # Each scenario gets an isolated copy so a push in one can't leak into another.

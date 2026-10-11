@@ -48,4 +48,14 @@ runs:
     - name: Commit and push
       id: auto-commit
       shell: bash
+      env:
+        # Composite actions do not populate the INPUT_* env vars the runner
+        # sets for other action types (actions/runner#665); auto-commit.sh
+        # reads INPUT_* names, so expose each input via the inputs context.
+        INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
+        INPUT_FOLDER: ${{ inputs.folder }}
+        INPUT_BRANCHES: ${{ inputs.branches }}
+        INPUT_COMMIT_USER_NAME: ${{ inputs.commit_user_name }}
+        INPUT_COMMIT_USER_EMAIL: ${{ inputs.commit_user_email }}
+        INPUT_IF_BEHIND: ${{ inputs.if_behind }}
       run: ${{ github.action_path }}/auto-commit.sh
