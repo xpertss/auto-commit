@@ -10,8 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.PROJEN_GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         id: checkout
@@ -53,7 +54,7 @@ jobs:
                   while IFS= read -r f; do echo "  - $f"; done <<< "$drifted"
                   echo ""
                   echo "To fix: revert the direct edits above, make the equivalent change in .projenrc.ts, then run npx projen and commit the regenerated output."
-                } | gh pr comment "$pr_number" --body-file - || echo "::warning::could not post PR comment (fork PR or missing token)"
+                } | gh pr comment "$pr_number" --body-file - || echo "::warning::could not post PR comment (fork PRs get a read-only token)"
               fi
             fi
             exit 1
