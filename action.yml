@@ -31,17 +31,22 @@ inputs:
       only for content that a later run on the newer branch will regenerate.
     default: 'fail'
 outputs:
+  # Composite actions must map each output from a step explicitly; without
+  # `value:` the output is always empty.
   committed:
     description: "'true' when a commit was created, 'false' when nothing was staged."
+    value: ${{ steps.auto-commit.outputs.committed }}
   pushed:
     description: >-
       'true' only when every target branch accepted the push; 'false' when
       nothing was staged, or a push was skipped or rejected.
+    value: ${{ steps.auto-commit.outputs.pushed }}
   skipped_branches:
     description: >-
       Space-separated target branches whose push was skipped as
       non-fast-forward (only with `if_behind: skip`). Empty when none were
       skipped.
+    value: ${{ steps.auto-commit.outputs.skipped_branches }}
 runs:
   using: composite
   steps:
