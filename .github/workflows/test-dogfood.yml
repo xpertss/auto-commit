@@ -49,12 +49,16 @@ jobs:
         run: |-
           set -euo pipefail
           adv="$(mktemp -d)"
-          # Authenticate the scratch clone explicitly with GITHUB_TOKEN. Cloning the
-          # workspace origin (git remote get-url origin) does not carry the checkout
-          # credential into a fresh clone in /tmp, so the advance push died with:
+          # Authenticate the scratch clone explicitly. Cloning the workspace origin
+          # (git remote get-url origin) does not carry the checkout credential into a
+          # fresh clone in /tmp, so the advance push died with:
           #   fatal: could not read Username for 'https://github.com'
+          # The org's runners do not inject GITHUB_TOKEN into the job environment
+          # (verified 2026-07: env var absent, secrets.GITHUB_TOKEN present), so take
+          # the token from the secrets context - under set -u the bare env var would
+          # be an unbound variable.
           host="${GITHUB_SERVER_URL#https://}"
-          git clone -q "https://x-access-token:${GITHUB_TOKEN}@${host}/${GITHUB_REPOSITORY}" "$adv"
+          git clone -q "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@${host}/${GITHUB_REPOSITORY}" "$adv"
           (
             cd "$adv"
             git config user.name "dogfood-advance"
