@@ -13,11 +13,24 @@ const project = new GitHubActionProject({
       {
         name: 'Changed path',
         fixtureSteps: [
+          // Best-effort: clear a stale test/dogfood left behind when a previous
+          // run's cleanup delete failed (e.g. a transient GitHub 5xx). If this
+          // delete also fails, the push below is skipped (if_behind: skip)
+          // instead of failing the run; the end-of-run cleanup deletes the
+          // branch again, so the next run pushes to a fresh branch.
+          'git push origin --delete test/dogfood || true',
           'echo "$(date -u +%Y%m%dT%H%M%SZ)" >> test/fixtures/dogfood-state.txt',
         ],
         inputs: {
           commit_message: 'test: dogfood',
           branches: 'test/dogfood',
+          // A stale test/dogfood (e.g. leftover from a previous run whose
+          // cleanup delete hit a transient GitHub 5xx) is never fast-forwardable
+          // from this run's fresh commit, so skip the push rather than fail the
+          // run; committed=true still holds. The end-of-run cleanup deletes the
+          // branch, so the next run exercises the normal push-to-fresh-branch
+          // path.
+          if_behind: 'skip',
         },
         assertions: [
           // step id defaults to a slug of `name` - here "changed-path-0"
